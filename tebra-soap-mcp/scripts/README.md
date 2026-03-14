@@ -1,16 +1,34 @@
 # Tebra SOAP MCP Server
 
-MCP server for Tebra Web Services API 2.1 (SOAP) focused on office administration workflows (appointments, patients, charges, payments, etc.).
+MCP server for Tebra Web Services API 2.1 (SOAP), focused on office administration workflows such as appointments, patients, charges, and payments.
 
-## What this server is for
+## Overview
 
-- Practice-management and billing workflows that are not fully covered by Tebra FHIR APIs.
-- Read and operational workflows such as `GetAppointments`, `GetPatients`, `GetCharges`, `GetPayments`.
-- Advanced SOAP operations via a generic passthrough tool.
+This server provides a stable MCP layer on top of Tebra's SOAP API so AI agents can query and operate against practice-management data without hand-crafting SOAP envelopes for each call.
 
-## Source reference
+It is designed for:
 
-This server was implemented against:
+- Office administration and billing-adjacent workflows not fully covered by Tebra FHIR APIs.
+- Read-focused automation (appointments, patients, charges, payments).
+- Safe extensibility through a generic operation passthrough tool.
+
+## Scope and non-goals
+
+In scope:
+
+- Authentication validation and connection diagnostics.
+- Read/reporting workflows using key Get operations.
+- Controlled access to additional SOAP operations via generic passthrough.
+
+Out of scope:
+
+- Replacing all Tebra API capabilities with opinionated wrappers.
+- Long-running job orchestration or queueing.
+- Data warehouse ETL (use a dedicated pipeline for large historical exports).
+
+## Source references
+
+Implemented and validated against:
 
 - WSDL: `https://webservice.kareo.com/services/soap/2.1/KareoServices.svc?singleWsdl`
 - Converted technical guide: `/home/workspace/Reports/Tebra API Integration Technical Guide.md`
@@ -21,32 +39,34 @@ This server was implemented against:
 2. Ensure API user has required permissions (System Admin/account admin as required by Tebra docs). If you still see permission errors after verifying settings, or you cannot find the needed permission settings in your tenant, submit a support ticket to `https://helpme.tebra.com/Contact_Us/Customer_Care_Center`.
 3. Confirm SOAP API access is enabled for your account.
 
-## Install
+## Installation
 
 ```bash
 npm install
 npm run build
 ```
 
-## Required environment variables
+## Configuration
+
+### Required environment variables
 
 - `TEBRA_SOAP_CUSTOMER_KEY`
 - `TEBRA_SOAP_USER`
 - `TEBRA_SOAP_PASSWORD`
 
-## Optional environment variables
+### Optional environment variables
 
 - `TEBRA_SOAP_ENDPOINT` (default: `https://webservice.kareo.com/services/soap/2.1/KareoServices.svc`)
 - `TEBRA_SOAP_TIMEOUT_MS` (default: `30000`)
 - `TEBRA_SOAP_CLIENT_VERSION` (default: `Zo-Tebra-Soap-MCP/0.1.0`)
 
-## Run
+## Running the server
 
 ```bash
 npm start
 ```
 
-## Example MCP client config (stdio)
+## MCP client configuration (stdio)
 
 ```json
 {
@@ -76,31 +96,75 @@ npm start
 - `tebra_soap_get_charges`
 - `tebra_soap_get_payments`
 
-## Auth model and request shape
+## Tool reference
 
-Most operations use a request object with nested `RequestHeader`.
+### `tebra_soap_health_check`
 
-- Example pattern: `<Operation><OperationReq><RequestHeader>...</RequestHeader>...</OperationReq></Operation>`
+Purpose:
 
-Special case:
+- Validates credentials and endpoint connectivity.
 
-- `GetCustomerIdFromKey` works with: `<GetCustomerIdFromKey><request><CustomerKey/><Password/><User/></request></GetCustomerIdFromKey>`
+Behavior:
 
-### `GetCustomerIdFromKey` example: failing vs working
+- Calls `GetCustomerIdFromKey` using the required special payload shape.
 
-Failing shape:
+Use when:
 
-```xml
-<api:GetCustomerIdFromKey>
-  <api:GetCustomerIdFromKeyReq>
-    <api:RequestHeader>
-      <api:CustomerKey>[REDACTED]</api:CustomerKey>
-      <api:Password>[REDACTED]</api:Password>
-      <api:User>[REDACTED]</api:User>
-    </api:RequestHeader>
-  </api:GetCustomerIdFromKeyReq>
-</api:GetCustomerIdFromKey>
-```
+- First-time setup.
+- Rotating credentials.
+- Confirming whether auth failures are credential vs request-shape issues.
+
+### `tebra_soap_debug_auth`
+
+Purpose:
+
+- Returns detailed auth diagnostics from one or more operations.
+
+Behavior:
+
+- Extracts and returns `SecurityResponse`, `ErrorResponse`, `CustomerId`, and SOAP fault details where present.
+
+Use when:
+
+- You need a support-ready diagnostic payload.
+- Calls succeed at HTTP level but fail authorization.
+
+### `tebra_soap_call_operation`
+
+Purpose:
+
+- Generic passthrough for operations without dedicated wrappers.
+
+Behavior:
+
+- Supports overriding request element name.
+- For `Get*` operations, defaults request wrapper to `request` when not specified.
+- For `GetCustomerIdFromKey`, defaults to inline auth mode and `request` wrapper.
+
+Use when:
+
+- You need `Create*`, `Update*`, `Delete*`, or less common `Get*` operations not yet wrapped.
+
+### Wrapper tools (`tebra_soap_get_*`)
+
+Purpose:
+
+- Opinionated wrappers for commonly used read operations.
+
+Behavior:
+
+- Sends requests with explicit `<Fields>` and `<Filter>` blocks for better compatibility.
+- Uses `request` wrapper for supported `Get*` calls.
+
+## Request model and SOAP envelope behavior
+
+### Baseline model
+
+Many API calls use a request object that contains `RequestHeader` and operation-specific request payload.
+
+### Critical special case
+
+`GetCustomerIdFromKey` does not follow the typical nested `RequestHeader` shape used by many other calls.
 
 Working shape:
 
@@ -114,39 +178,67 @@ Working shape:
 </sch:GetCustomerIdFromKey>
 ```
 
-## Known pitfalls and how this skill avoids them
+Common failing shape:
 
-1. `GetCustomerIdFromKey` is a special auth shape.
-   - It must use `<request><CustomerKey/><Password/><User/></request>`.
-   - This skill forces `inline_auth` + `request` for that operation.
+```xml
+<api:GetCustomerIdFromKey>
+  <api:GetCustomerIdFromKeyReq>
+    <api:RequestHeader>
+      <api:CustomerKey>[REDACTED]</api:CustomerKey>
+      <api:Password>[REDACTED]</api:Password>
+      <api:User>[REDACTED]</api:User>
+    </api:RequestHeader>
+  </api:GetCustomerIdFromKeyReq>
+</api:GetCustomerIdFromKey>
+```
 
-2. Many `Get*` operations expect `<request>`, not `<Operation>Req`.
-   - In practice, `GetCharges`, `GetPractices`, `GetPatients`, `GetAppointments`, and `GetPayments` are safest with `<request>`.
-   - The generic tool now defaults `request_element_name` to `request` for `Get*` operations unless you override it.
+## Known pitfalls and how this server handles them
 
-3. `Get*` operations often require both `Fields` and `Filter` blocks.
-   - Sending only flat top-level keys can lead to empty results or internal faults.
-   - The wrapper tools now send `<Fields>` + `<Filter>` explicitly in the request body.
+1. `GetCustomerIdFromKey` auth shape mismatch.
+- Server enforces inline auth + `request` for this call.
 
-4. `GetPractices` may fail when `Filter` is omitted.
-   - If you see a null-reference/internal error, include a minimal filter such as `Active=true`.
-   - This is a known server behavior quirk, not credential failure.
+2. `Get*` wrapper mismatch (`request` vs `<Operation>Req`).
+- Generic tool now defaults to `request` for `Get*` unless overridden.
 
-5. `ProcedureCode` values can be mixed types.
-   - Some values are numeric CPTs (e.g., `99215`), others are non-CPT strings (e.g., `COSME`).
-   - For CPT analytics, count only 5-digit numeric codes and support both numeric and string representations.
+3. Missing `Fields`/`Filter` sections on Get operations.
+- Wrapper tools explicitly send both blocks.
 
-6. Date fields can behave differently by operation.
-   - If a server-side date filter looks inconsistent, fetch with a broad but safe filter, then filter client-side using returned date fields (for example `ServiceStartDate`) for reporting windows.
+4. `GetPractices` null-reference edge case when no filter is supplied.
+- Use a minimal filter (for example `Active=true`) if encountered.
 
-## Common usage guidance from Tebra docs
+5. Mixed `ProcedureCode` types.
+- Expect both numeric CPT values and non-CPT codes (for example `COSME`).
+- For CPT reporting, count only 5-digit numeric values.
 
-- Prefer `PracticeName` filters for Get operations.
-- If using date filters, provide both start and end (for example, `FromCreatedDate` and `ToCreatedDate`).
-- Use narrower filters to reduce payload size and API load.
-- Poll conservatively; avoid high-frequency polling when not needed.
+6. Date-window discrepancies across filter modes.
+- If server-side date filters produce surprising windows, fetch safely and apply client-side windowing against returned date fields (for example `ServiceStartDate`).
 
-## Rate limit reminders (selected)
+## Common operation guidance
+
+### Get operations
+
+- Prefer scoped filters (`PracticeName`, plus date window).
+- For date filters, send both start and end values.
+- Narrow by patient/provider/location when possible to reduce payload size.
+
+### Charges/CPT analytics
+
+Recommended approach:
+
+1. Fetch charges with `ProcedureCode` and relevant date fields.
+2. Normalize code values to string.
+3. Keep only 5-digit numeric CPT values.
+4. Group and count.
+5. Report top N and total lines considered.
+
+### Payments
+
+- Include date filters and patient filters for operational reporting.
+- Validate whether payment date vs created date is the desired business metric.
+
+## Rate limits and throughput
+
+Selected limits from Tebra documentation:
 
 - `GetAppointments`: 1 call/second
 - `GetCharges`: 1 call/second
@@ -156,25 +248,111 @@ Working shape:
 - `UpdateAppointment`: 1 call every 0.5 seconds
 - `DeleteAppointment`: 1 call every 0.5 seconds
 
-429 responses are account-level throttling; add delay/retry backoff.
+Operational recommendations:
 
-## Using the generic tool safely
+- Add retry with exponential backoff for 429 responses.
+- Avoid burst polling across many concurrent tasks.
+- Prefer batched reporting windows over high-frequency polling.
 
-`tebra_soap_call_operation` is for operations not yet wrapped in dedicated MCP tools.
+## Error model and diagnostics
 
-- It auto-injects `RequestHeader` by default.
-- Use `request_element_name` when the operation expects a non-default request wrapper.
-- Use `extra_request_xml` for nested objects.
+Inspect these fields in responses:
 
-## Troubleshooting
+- `SecurityResponse`
+- `ErrorResponse`
+- SOAP fault body (`s:Fault`)
 
-- `CustomerId = -1` / `IsAuthorized = false`:
-  - Verify operation-specific request shape first (especially `GetCustomerIdFromKey`).
-  - Confirm key/user/password belong to the same account.
-  - Confirm API permissions and account activation.
-- `DeserializationFailed` fault:
-  - Wrong request wrapper or XML schema mismatch for that operation.
-- `429`:
-  - Slow down and add retry with backoff.
-- XML special characters in password (`&`, `<`, `>`, `"`, `'`):
-  - Must be XML-escaped by the client.
+Typical patterns:
+
+- `CustomerId = -1` / `IsAuthorized = false`: auth payload shape, credentials mismatch, or permissions.
+- `DeserializationFailed`: wrapper or XML schema mismatch.
+- Internal service fault with null-reference: often missing expected filter/body structure.
+
+## Security and PHI handling
+
+- Never hardcode credentials in source files.
+- Use environment variables only.
+- Treat responses as potentially sensitive/PHI-bearing data.
+- Minimize logged payload details in shared logs.
+- Redact identifiers before sharing diagnostics externally.
+
+## Local development
+
+From `scripts/`:
+
+```bash
+npm install
+npm run build
+npm start
+```
+
+Development notes:
+
+- Server is TypeScript compiled to `dist/`.
+- SOAP calls are implemented in `src/soap-client.ts`.
+- Tool registration and wrapper behavior are in `src/index.ts`.
+
+## Suggested validation checklist
+
+1. Run build (`npm run build`).
+2. Run `tebra_soap_health_check`.
+3. Run `tebra_soap_debug_auth` for `GetCustomerIdFromKey` and `GetThrottles`.
+4. Run one wrapper tool (`tebra_soap_get_charges`) with a narrow date range.
+5. Confirm no SOAP fault and expected `SecurityResponse` success.
+
+## Troubleshooting playbook
+
+### Auth fails but endpoint reachable
+
+- Run `tebra_soap_health_check`.
+- Verify `GetCustomerIdFromKey` uses `request` with inline auth fields.
+- Confirm credentials all belong to the same tenant.
+- Confirm API permissions are assigned to the API user.
+
+### Permission settings unclear in Tebra
+
+- Open support ticket: `https://helpme.tebra.com/Contact_Us/Customer_Care_Center`
+
+### Empty result sets
+
+- Confirm date window and business date type (created vs modified vs service).
+- Confirm `PracticeName` exactly matches authorized practice.
+- Confirm filters are not overly restrictive.
+
+### 429 throttling
+
+- Reduce request frequency.
+- Add retry/backoff.
+- Spread load over time windows.
+
+### XML encoding issues
+
+- Ensure special characters are escaped (`&`, `<`, `>`, `"`, `'`).
+
+## FAQ
+
+### Does this replace Tebra FHIR?
+
+No. Use SOAP for office administration workflows and operations that are not fully available in FHIR.
+
+### Can I call operations not in the wrappers?
+
+Yes. Use `tebra_soap_call_operation` and provide operation-specific request XML.
+
+### Why does SoapUI sometimes work when code fails?
+
+Usually due to subtle payload shape differences (`request` wrapper, `Fields/Filter` blocks, or auth placement).
+
+## Contributing
+
+When adding a new wrapper tool:
+
+1. Confirm exact request/response shape in WSDL.
+2. Add explicit `Fields` + `Filter` construction where applicable.
+3. Keep auth mode explicit for special-case operations.
+4. Update README sections for usage and pitfalls.
+5. Validate with a live call and include expected response markers.
+
+## License
+
+Internal project codebase. Add repository-level licensing terms if publishing externally.
