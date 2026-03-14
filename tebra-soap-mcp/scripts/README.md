@@ -18,7 +18,7 @@ This server was implemented against:
 ## Prerequisites
 
 1. Obtain Customer Key in Tebra (My Account -> Get Customer Key).
-2. Ensure API user has required permissions (System Admin/account admin as required by Tebra docs).
+2. Ensure API user has required permissions (System Admin/account admin as required by Tebra docs). If you still see permission errors after verifying settings, or you cannot find the needed permission settings in your tenant, submit a support ticket to `https://helpme.tebra.com/Contact_Us/Customer_Care_Center`.
 3. Confirm SOAP API access is enabled for your account.
 
 ## Install
@@ -113,6 +113,31 @@ Working shape:
   </sch:request>
 </sch:GetCustomerIdFromKey>
 ```
+
+## Known pitfalls and how this skill avoids them
+
+1. `GetCustomerIdFromKey` is a special auth shape.
+   - It must use `<request><CustomerKey/><Password/><User/></request>`.
+   - This skill forces `inline_auth` + `request` for that operation.
+
+2. Many `Get*` operations expect `<request>`, not `<Operation>Req`.
+   - In practice, `GetCharges`, `GetPractices`, `GetPatients`, `GetAppointments`, and `GetPayments` are safest with `<request>`.
+   - The generic tool now defaults `request_element_name` to `request` for `Get*` operations unless you override it.
+
+3. `Get*` operations often require both `Fields` and `Filter` blocks.
+   - Sending only flat top-level keys can lead to empty results or internal faults.
+   - The wrapper tools now send `<Fields>` + `<Filter>` explicitly in the request body.
+
+4. `GetPractices` may fail when `Filter` is omitted.
+   - If you see a null-reference/internal error, include a minimal filter such as `Active=true`.
+   - This is a known server behavior quirk, not credential failure.
+
+5. `ProcedureCode` values can be mixed types.
+   - Some values are numeric CPTs (e.g., `99215`), others are non-CPT strings (e.g., `COSME`).
+   - For CPT analytics, count only 5-digit numeric codes and support both numeric and string representations.
+
+6. Date fields can behave differently by operation.
+   - If a server-side date filter looks inconsistent, fetch with a broad but safe filter, then filter client-side using returned date fields (for example `ServiceStartDate`) for reporting windows.
 
 ## Common usage guidance from Tebra docs
 

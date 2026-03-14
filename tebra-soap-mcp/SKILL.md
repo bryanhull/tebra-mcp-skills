@@ -24,6 +24,8 @@ Optional:
 - `TEBRA_SOAP_TIMEOUT_MS` (default: `30000`)
 - `TEBRA_SOAP_CLIENT_VERSION` (default: `Zo-Tebra-Soap-MCP/0.1.0`)
 
+If you encounter permission errors after confirming your API user permissions, or you cannot locate the required permission settings in Tebra, submit a support ticket at `https://helpme.tebra.com/Contact_Us/Customer_Care_Center`.
+
 ## Important auth note
 
 For `GetCustomerIdFromKey`, use this payload shape:
@@ -35,6 +37,12 @@ Do not use:
 - `GetCustomerIdFromKeyReq` with nested `RequestHeader`
 
 Using the wrong shape can return `CustomerId = -1` even with valid credentials.
+
+## Request-shape guardrails
+
+- Most `Get*` operations in this API are safest with a `request` wrapper and explicit `Fields` + `Filter` blocks.
+- For analytics, `ProcedureCode` may return mixed values (numeric CPTs and non-CPT strings). Count only 5-digit numeric CPT values.
+- If server-side date filters return unexpected windows, fetch with safe filters and apply client-side filtering using returned date fields (for example, `ServiceStartDate`).
 
 ## Run
 

@@ -36,6 +36,30 @@ function toText(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function boolFieldXml(fieldNames: string[]): string {
+  return fieldNames.map((name) => `<api:${name}>true</api:${name}>`).join("");
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function scalarFilterXml(
+  filters: Record<string, string | number | boolean | undefined>
+): string {
+  const chunks: string[] = [];
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined || value === null || value === "") continue;
+    chunks.push(`<api:${key}>${escapeXml(String(value))}</api:${key}>`);
+  }
+  return chunks.join("");
+}
+
 function extractDiagnostics(parsed: unknown): {
   securityResponse?: unknown;
   errorResponse?: unknown;
@@ -203,8 +227,16 @@ server.registerTool(
     }
   },
   async ({ operation, request_element_name, extra_request_xml }) => {
+    const autoRequestElement =
+      request_element_name ??
+      (operation === "GetCustomerIdFromKey" || operation.startsWith("Get")
+        ? "request"
+        : undefined);
+    const autoAuthMode = operation === "GetCustomerIdFromKey" ? "inline_auth" : undefined;
+
     const result = await soap.callOperation(operation, {
-      requestElement: request_element_name,
+      requestElement: autoRequestElement,
+      authMode: autoAuthMode,
       extraRequestXml: extra_request_xml ?? ""
     });
     return {
@@ -270,20 +302,31 @@ server.registerTool(
     }
   },
   async (input) => {
+    const fieldsXml = boolFieldXml([
+      "ID",
+      "PracticeName",
+      "PatientID",
+      "PatientFullName",
+      "StartDate",
+      "EndDate",
+      "AppointmentReason1"
+    ]);
+    const filterXml = scalarFilterXml({
+      PracticeName: input.practice_name,
+      FromCreatedDate: input.from_created_date,
+      ToCreatedDate: input.to_created_date,
+      FromLastModifiedDate: input.from_last_modified_date,
+      ToLastModifiedDate: input.to_last_modified_date,
+      StartDate: input.start_date,
+      EndDate: input.end_date,
+      PatientID: input.patient_id,
+      PatientFullName: input.patient_full_name,
+      ServiceLocationName: input.service_location_name,
+      AppointmentReason: input.appointment_reason
+    });
     const result = await soap.callOperation("GetAppointments", {
-      fields: {
-        PracticeName: input.practice_name,
-        FromCreatedDate: input.from_created_date,
-        ToCreatedDate: input.to_created_date,
-        FromLastModifiedDate: input.from_last_modified_date,
-        ToLastModifiedDate: input.to_last_modified_date,
-        StartDate: input.start_date,
-        EndDate: input.end_date,
-        PatientID: input.patient_id,
-        PatientFullName: input.patient_full_name,
-        ServiceLocationName: input.service_location_name,
-        AppointmentReason: input.appointment_reason
-      }
+      requestElement: "request",
+      extraRequestXml: `<api:Fields>${fieldsXml}</api:Fields><api:Filter>${filterXml}</api:Filter>`
     });
     return {
       content: [{ type: "text", text: toText(result.parsed) }],
@@ -314,16 +357,22 @@ server.registerTool(
     }
   },
   async (input) => {
+    const fieldsXml = boolFieldXml(["ID", "PracticeName", "FirstName", "LastName", "CreatedDate"]);
+    const filterXml = scalarFilterXml({
+      PracticeName: input.practice_name,
+      FromCreatedDate: input.from_created_date,
+      ToCreatedDate: input.to_created_date,
+      FromLastModifiedDate: input.from_last_modified_date,
+      ToLastModifiedDate: input.to_last_modified_date,
+      PatientFullName: input.patient_full_name
+    });
     const result = await soap.callOperation("GetPatients", {
-      fields: {
-        PracticeName: input.practice_name,
-        FromCreatedDate: input.from_created_date,
-        ToCreatedDate: input.to_created_date,
-        FromLastModifiedDate: input.from_last_modified_date,
-        ToLastModifiedDate: input.to_last_modified_date,
-        PatientFullName: input.patient_full_name,
-        IncludeCases: input.include_cases
-      }
+      requestElement: "request",
+      extraRequestXml:
+        `<api:Fields>${fieldsXml}</api:Fields><api:Filter>${filterXml}</api:Filter>` +
+        (input.include_cases !== undefined
+          ? `<api:IncludeCases>${String(input.include_cases)}</api:IncludeCases>`
+          : "")
     });
     return {
       content: [{ type: "text", text: toText(result.parsed) }],
@@ -353,15 +402,28 @@ server.registerTool(
     }
   },
   async (input) => {
+    const fieldsXml = boolFieldXml([
+      "ID",
+      "PracticeName",
+      "ProcedureCode",
+      "ProcedureName",
+      "CreatedDate",
+      "LastModifiedDate",
+      "ServiceStartDate",
+      "PatientID",
+      "PatientName"
+    ]);
+    const filterXml = scalarFilterXml({
+      PracticeName: input.practice_name,
+      FromCreatedDate: input.from_created_date,
+      ToCreatedDate: input.to_created_date,
+      FromLastModifiedDate: input.from_last_modified_date,
+      ToLastModifiedDate: input.to_last_modified_date,
+      PatientID: input.patient_id
+    });
     const result = await soap.callOperation("GetCharges", {
-      fields: {
-        PracticeName: input.practice_name,
-        FromCreatedDate: input.from_created_date,
-        ToCreatedDate: input.to_created_date,
-        FromLastModifiedDate: input.from_last_modified_date,
-        ToLastModifiedDate: input.to_last_modified_date,
-        PatientID: input.patient_id
-      }
+      requestElement: "request",
+      extraRequestXml: `<api:Fields>${fieldsXml}</api:Fields><api:Filter>${filterXml}</api:Filter>`
     });
     return {
       content: [{ type: "text", text: toText(result.parsed) }],
@@ -391,15 +453,26 @@ server.registerTool(
     }
   },
   async (input) => {
+    const fieldsXml = boolFieldXml([
+      "ID",
+      "PracticeName",
+      "PatientID",
+      "PatientName",
+      "CreatedDate",
+      "LastModifiedDate",
+      "Amount"
+    ]);
+    const filterXml = scalarFilterXml({
+      PracticeName: input.practice_name,
+      FromCreatedDate: input.from_created_date,
+      ToCreatedDate: input.to_created_date,
+      FromLastModifiedDate: input.from_last_modified_date,
+      ToLastModifiedDate: input.to_last_modified_date,
+      PatientID: input.patient_id
+    });
     const result = await soap.callOperation("GetPayments", {
-      fields: {
-        PracticeName: input.practice_name,
-        FromCreatedDate: input.from_created_date,
-        ToCreatedDate: input.to_created_date,
-        FromLastModifiedDate: input.from_last_modified_date,
-        ToLastModifiedDate: input.to_last_modified_date,
-        PatientID: input.patient_id
-      }
+      requestElement: "request",
+      extraRequestXml: `<api:Fields>${fieldsXml}</api:Fields><api:Filter>${filterXml}</api:Filter>`
     });
     return {
       content: [{ type: "text", text: toText(result.parsed) }],
