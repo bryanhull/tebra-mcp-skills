@@ -1,0 +1,58 @@
+---
+name: tebra-soap-mcp
+description: MCP server for Tebra Web Services API 2.1 (SOAP) using CustomerKey, User, and Password for office administration workflows.
+compatibility: Created for Zo Computer
+metadata:
+  author: bryanhull.zo.computer
+---
+
+# Tebra SOAP MCP Server
+
+This skill provides an MCP server for the Tebra/Kareo SOAP API.
+
+## Setup
+
+Add these secrets in [Settings > Advanced](/?t=settings&s=advanced):
+
+- `TEBRA_SOAP_CUSTOMER_KEY`
+- `TEBRA_SOAP_USER`
+- `TEBRA_SOAP_PASSWORD`
+
+Optional:
+
+- `TEBRA_SOAP_ENDPOINT` (default: `https://webservice.kareo.com/services/soap/2.1/KareoServices.svc`)
+- `TEBRA_SOAP_TIMEOUT_MS` (default: `30000`)
+- `TEBRA_SOAP_CLIENT_VERSION` (default: `Zo-Tebra-Soap-MCP/0.1.0`)
+
+## Important auth note
+
+For `GetCustomerIdFromKey`, use this payload shape:
+
+- `GetCustomerIdFromKey` -> `request` -> `CustomerKey`, `Password`, `User`
+
+Do not use:
+
+- `GetCustomerIdFromKeyReq` with nested `RequestHeader`
+
+Using the wrong shape can return `CustomerId = -1` even with valid credentials.
+
+## Run
+
+```bash
+cd /home/workspace/Skills/tebra-soap-mcp/scripts
+npm install
+npm run build
+npm start
+```
+
+## Tools
+
+- `tebra_soap_list_operations`
+- `tebra_soap_debug_auth`
+- `tebra_soap_health_check`
+- `tebra_soap_call_operation`
+- `tebra_soap_get_patient`
+- `tebra_soap_get_appointments`
+- `tebra_soap_get_patients`
+- `tebra_soap_get_charges`
+- `tebra_soap_get_payments`
