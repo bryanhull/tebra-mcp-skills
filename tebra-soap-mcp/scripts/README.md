@@ -46,6 +46,26 @@ npm install
 npm run build
 ```
 
+## Install on Zo Computer
+
+Use these steps when another Zo user installs this skill from this repo.
+
+1. Place the skill folder at `Skills/tebra-soap-mcp` in their Zo workspace.
+2. Open `Skills/tebra-soap-mcp/scripts` in terminal and run:
+
+```bash
+npm install
+npm run build
+```
+
+3. In Zo, add these secrets at [Settings > Advanced](/?t=settings&s=advanced):
+   - `TEBRA_SOAP_CUSTOMER_KEY`
+   - `TEBRA_SOAP_USER`
+   - `TEBRA_SOAP_PASSWORD`
+4. Configure MCP to run `scripts/dist/index.js` (see config example below).
+5. Run a first validation call with `tebra_soap_health_check`.
+6. If auth still fails after confirming key/user/password, submit a Tebra support ticket: `https://helpme.tebra.com/Contact_Us/Customer_Care_Center`.
+
 ## Configuration
 
 ### Required environment variables
